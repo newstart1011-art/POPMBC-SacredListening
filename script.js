@@ -180,7 +180,7 @@ function showQuickPractice() {
     const p = practiceMenu[randomIdx];
     state.journeyLength = 1;
     state.selectedPractices = [randomIdx];
-    state.completedPractices = [];
+    // We don't reset completedPractices here because it tracks history
     saveState();
 
     document.getElementById('screen-container').innerHTML = `
@@ -210,8 +210,12 @@ function startOnboarding() {
 }
 
 function saveOnboarding(days) {
-  state.journeyLength = days; state.selectedPractices = []; state.completedPractices = []; state.journeyLog = [];
-  saveState(); showSanctuaryBuilder();
+  state.journeyLength = days; 
+  state.selectedPractices = []; 
+  // Keep completedPractices for checkmark history
+  state.journeyLog = [];
+  saveState(); 
+  showSanctuaryBuilder();
 }
 
 function showSanctuaryBuilder() {
@@ -240,13 +244,17 @@ function renderCategorizedPractices() {
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top:10px;">
                 ${practiceMenu.filter(p => p.category === cat).map((p) => {
                     const gIdx = practiceMenu.findIndex(item => item.name === p.name);
-                    const isSelected = state.selectedPractices.includes(gIdx);
-                    const isDone = state.completedPractices.includes(gIdx);
+                    const isSelectedCurrent = state.selectedPractices.includes(gIdx);
+                    // Check if this practice ID exists in the permanent history array
+                    const hasBeenCompletedBefore = state.completedPractices.includes(gIdx);
+                    
                     return `
-                        <div class="card ${isDone ? 'selected' : ''}" 
-                             style="${isSelected && !isDone ? 'border: 2px solid var(--sage); background: white;' : ''} padding: 10px;" 
+                        <div class="card ${isSelectedCurrent ? 'selected' : ''}" 
+                             style="${isSelectedCurrent ? 'border: 2px solid var(--sage); background: white;' : ''} padding: 10px; position: relative;" 
                              onclick="togglePractice(${gIdx})">
-                            <strong style="font-size: 0.75rem;">${p.name}</strong><br>
+                            <strong style="font-size: 0.75rem;">
+                                ${p.name} ${hasBeenCompletedBefore ? '<span style="color: var(--sage); margin-left: 4px;">✓</span>' : ''}
+                            </strong><br>
                             <span style="font-size:0.6rem;">${p.verse}</span>
                         </div>`;
                 }).join('')}
@@ -257,20 +265,26 @@ function renderCategorizedPractices() {
 }
 
 function togglePractice(idx) {
-    if (state.completedPractices.includes(idx)) return; 
-    if (state.selectedPractices.includes(idx)) state.selectedPractices = state.selectedPractices.filter(i => i !== idx);
-    else if (state.selectedPractices.length < state.journeyLength) state.selectedPractices.push(idx);
+    // Allows toggling selection even if completed before
+    if (state.selectedPractices.includes(idx)) {
+        state.selectedPractices = state.selectedPractices.filter(i => i !== idx);
+    } else if (state.selectedPractices.length < state.journeyLength) {
+        state.selectedPractices.push(idx);
+    }
+    
     const p = practiceMenu[idx];
     const preview = document.getElementById('preview-area');
-    preview.style.display = 'block'; preview.innerHTML = `<strong>Focus:</strong> ${p.guide}`;
-    saveState(); showSanctuaryBuilder();
+    preview.style.display = 'block'; 
+    preview.innerHTML = `<strong>Focus:</strong> ${p.guide}`;
+    saveState(); 
+    showSanctuaryBuilder();
 }
 
 function launchDay() {
-  const currentIdx = state.selectedPractices[state.completedPractices.length];
+  const currentIdx = state.selectedPractices[state.completedPractices.filter(id => state.selectedPractices.includes(id)).length] || state.selectedPractices[0];
   const p = practiceMenu[currentIdx];
   const activeB = "#6B5649"; const inactiveT = "#C2B9B0"; 
-  const progressionLabel = state.journeyLength > 1 ? `Encounter ${state.completedPractices.length + 1} of ${state.journeyLength}` : `Today's Practice`;
+  const progressionLabel = state.journeyLength > 1 ? `Focus Area` : `Today's Practice`;
 
   document.getElementById('screen-container').innerHTML = `
     <h4 style="margin:0; opacity:0.8; font-size:0.75rem;">${progressionLabel}</h4>
@@ -339,21 +353,29 @@ function showReflection() {
 }
 
 function finishDay(mood) {
-  const cIdx = state.completedPractices.length;
-  const pIdx = state.selectedPractices[cIdx];
+  // Logic to find which practice was just done
+  // We look for the first selected practice that hasn't been added to the log in THIS session
+  const logCount = state.journeyLog.length;
+  const pIdx = state.selectedPractices[logCount];
+  
   if (pIdx !== undefined) {
     const p = practiceMenu[pIdx];
     state.journeyLog.push({ name: p.name, verse: p.verse, mood: mood });
-    state.completedPractices.push(pIdx);
+    
+    // Checkmark persistence: Add to completedPractices if not already there
+    if (!state.completedPractices.includes(pIdx)) {
+        state.completedPractices.push(pIdx);
+    }
     saveState();
   }
+  
   document.getElementById('screen-container').innerHTML = `
     <h2 style="color:var(--sage); font-style:italic; font-size: 1.6rem; margin-top:0;">Grace and peace.</h2>
     <div style="font-size: 0.95rem; padding: 20px; background: white; border-radius: 15px; margin-bottom: 20px; text-align: left; color: var(--charcoal); box-shadow: 0 2px 10px rgba(0,0,0,0.06);">
         ${mood.includes('heard') || mood.includes('peaceful') ? 'What a gift to encounter Him.' : 'God honors your heart for seeking Him.'}
     </div>
     <div style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
-        ${state.completedPractices.length < state.journeyLength ? `<button onclick="launchDay()" style="width: min(280px, 85%);">Next Encounter</button>` : `<button onclick="showFinalCelebration()" style="width: min(280px, 85%); background:var(--sage);">Finish Journey</button>`}
+        ${state.journeyLog.length < state.journeyLength ? `<button onclick="launchDay()" style="width: min(280px, 85%);">Next Encounter</button>` : `<button onclick="showFinalCelebration()" style="width: min(280px, 85%); background:var(--sage);">Finish Journey</button>`}
     </div>`;
 }
 
